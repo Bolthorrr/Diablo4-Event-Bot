@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 from datetime import datetime
 
@@ -16,6 +16,19 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+statuses = [
+    discord.Activity(type=discord.ActivityType.Watching, name="Helltides"),
+    discord.Activity(type=discord.ActivityType.Watching, name="World Bosses"),
+    discord.Activity(type=discord.ActivityType.Watching, name="Terror Zones"),
+    discord.Activity(type=discord.ActivityType.Playing, name="Diablo Events"),
+    discord.Activity(type=discord.ActivityType.Competing, name="Sanctuary")
+]
+
+@tasks.loop(minutes=5)
+async def rotate_status():
+    import random
+    await bot.change_presence(activity=random.choice(statuses))
+
 
 
 # ALL EVENTS LIVE HERE
@@ -71,6 +84,9 @@ def get_role(title):
 async def on_ready():
 
     print(f"Logged in as {bot.user}")
+    if not rotate_status.is_running():
+    rotate_status.start()
+
 
     channel = bot.get_channel(CHANNEL_ID)
 
