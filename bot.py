@@ -17,11 +17,11 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 statuses = [
-    discord.Activity(type=discord.ActivityType.Watching, name="Helltides"),
-    discord.Activity(type=discord.ActivityType.Watching, name="World Bosses"),
-    discord.Activity(type=discord.ActivityType.Watching, name="Terror Zones"),
-    discord.Activity(type=discord.ActivityType.Playing, name="Diablo Events"),
-    discord.Activity(type=discord.ActivityType.Competing, name="Sanctuary")
+    discord.Activity(type=discord.ActivityType.watching, name="Helltides"),
+    discord.Activity(type=discord.ActivityType.watching, name="World Bosses"),
+    discord.Activity(type=discord.ActivityType.watching, name="Terror Zones"),
+    discord.Activity(type=discord.ActivityType.playing, name="Diablo Events"),
+    discord.Activity(type=discord.ActivityType.competing, name="Sanctuary")
 ]
 
 @tasks.loop(minutes=5)
