@@ -84,9 +84,9 @@ def get_role(title):
 async def on_ready():
 
     print(f"Logged in as {bot.user}")
-    if not rotate_status.is_running():
-    rotate_status.start()
 
+    if not rotate_status.is_running():
+        rotate_status.start()
 
     channel = bot.get_channel(CHANNEL_ID)
 
