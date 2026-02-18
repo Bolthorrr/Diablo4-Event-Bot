@@ -136,7 +136,7 @@ async def on_message(message):
     embed = message.embeds[0]
     title = embed.title if embed.title else ""
 
-        embed_text = str(embed.to_dict()).lower()
+    embed_text = str(embed.to_dict()).lower()
 
     # Detect Terror Zone
     if "terrorized" in embed_text:
