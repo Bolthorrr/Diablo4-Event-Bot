@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-import re
 from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
@@ -10,49 +9,90 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 LEGION_ROLE = os.getenv("LEGION_ROLE")
 HELLTIDE_ROLE = os.getenv("HELLTIDE_ROLE")
 BOSS_ROLE = os.getenv("BOSS_ROLE")
+TERROR_ROLE = os.getenv("TERROR_ROLE")
+CLONE_ROLE = os.getenv("CLONE_ROLE")
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+
+# ALL EVENTS LIVE HERE
 event_slots = {
     "Legion Event": None,
     "Helltide": None,
-    "World Boss": None
+    "World Boss": None,
+    "Terror Zone Tracker": None,
+    "Diablo Clone Tracker": None
 }
 
 last_pinged = {
-    "Legion Event": None,
-    "Helltide": None,
-    "World Boss": None
+    event: None for event in event_slots
 }
 
 
 def event_started(embed):
-    """Detect if event has begun based on 'ago' text."""
-    text = str(embed.to_dict())
+    """
+    Detect if event has begun.
 
-    if "ago" in text.lower():
-        return True
+    Many trackers switch to phrases like:
+    NOW
+    ACTIVE
+    TERRORIZED
+    SPAWNED
+    ago
+    """
 
-    return False
+    text = str(embed.to_dict()).lower()
+
+    trigger_words = [
+        "now",
+        "active",
+        "terrorized",
+        "spawned",
+        "ago"
+    ]
+
+    return any(word in text for word in trigger_words)
+
+
+def get_role(title):
+    return {
+        "Legion Event": LEGION_ROLE,
+        "Helltide": HELLTIDE_ROLE,
+        "World Boss": BOSS_ROLE,
+        "Terror Zone Tracker": TERROR_ROLE,
+        "Diablo Clone Tracker": CLONE_ROLE
+    }.get(title)
 
 
 @bot.event
 async def on_ready():
+
     print(f"Logged in as {bot.user}")
 
     channel = bot.get_channel(CHANNEL_ID)
 
-    # Create slot messages if missing
+    # Locate existing slot messages
+    async for msg in channel.history(limit=100):
+
+        if msg.author != bot.user:
+            continue
+
+        if not msg.embeds:
+            continue
+
+        title = msg.embeds[0].title
+
+        if title in event_slots:
+            event_slots[title] = msg
+
+    # Create missing slots
     for event in event_slots:
-        async for msg in channel.history(limit=50):
-            if msg.author == bot.user and msg.embeds:
-                if msg.embeds[0].title == event:
-                    event_slots[event] = msg
 
         if event_slots[event] is None:
+
             embed = discord.Embed(
                 title=event,
                 description="Waiting for event data...",
@@ -66,6 +106,7 @@ async def on_ready():
 @bot.event
 async def on_message(message):
 
+    # Only webhook / followed announcement messages
     if not message.webhook_id:
         return
 
@@ -83,27 +124,26 @@ async def on_message(message):
 
     slot_message = event_slots[title]
 
-    # EDIT SLOT MESSAGE
+    # EDIT SLOT
     await slot_message.edit(embed=embed)
 
-    # PING ONLY WHEN EVENT STARTS
+    # PING WHEN EVENT STARTS
     if event_started(embed):
 
         now = datetime.utcnow()
 
         if last_pinged[title] is None or (now - last_pinged[title]).seconds > 1800:
 
-            role = {
-                "Legion Event": LEGION_ROLE,
-                "Helltide": HELLTIDE_ROLE,
-                "World Boss": BOSS_ROLE
-            }[title]
+            role = get_role(title)
 
-            await message.channel.send(f"<@&{role}> **{title} is LIVE!**")
+            if role:
+                await message.channel.send(
+                    f"<@&{role}> **{title} is LIVE!**"
+                )
 
             last_pinged[title] = now
 
-    # DELETE WEBHOOK MESSAGE
+    # DELETE SOURCE MESSAGE (keeps channel clean)
     await message.delete()
 
 
