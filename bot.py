@@ -122,9 +122,10 @@ async def on_ready():
 @bot.event
 async def on_message(message):
 
-    # Only webhook / followed announcement messages
-    if not message.webhook_id:
+    # Allow webhook OR crossposted OR bot messages
+    if not (message.webhook_id or message.author.bot):
         return
+
 
     if message.channel.id != CHANNEL_ID:
         return
@@ -133,10 +134,17 @@ async def on_message(message):
         return
 
     embed = message.embeds[0]
-    title = embed.title
+    title = embed.title if embed.title else ""
+
+        embed_text = str(embed.to_dict()).lower()
+
+    # Detect Terror Zone
+    if "terrorized" in embed_text:
+        title = "Terror Zone"
 
     if title not in event_slots:
         return
+
 
     slot_message = event_slots[title]
 
