@@ -2,9 +2,12 @@ import discord
 from discord.ext import commands, tasks
 import os
 from datetime import datetime
+import random
 
 TOKEN = os.getenv("TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+
+INTEGRATION_CHANNEL_ID = int(os.getenv("INTEGRATION_CHANNEL_ID"))
+TRACKER_CHANNEL_ID = int(os.getenv("TRACKER_CHANNEL_ID"))
 
 LEGION_ROLE = os.getenv("LEGION_ROLE")
 HELLTIDE_ROLE = os.getenv("HELLTIDE_ROLE")
@@ -16,6 +19,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
 statuses = [
     discord.Activity(type=discord.ActivityType.watching, name="Helltides"),
     discord.Activity(type=discord.ActivityType.watching, name="World Bosses"),
@@ -26,12 +30,10 @@ statuses = [
 
 @tasks.loop(minutes=5)
 async def rotate_status():
-    import random
     await bot.change_presence(activity=random.choice(statuses))
 
 
-
-# ALL EVENTS LIVE HERE
+# SLOT SYSTEM
 event_slots = {
     "Legion Event": None,
     "Helltide": None,
@@ -40,23 +42,10 @@ event_slots = {
     "Diablo Clone Tracker": None
 }
 
-last_pinged = {
-    event: None for event in event_slots
-}
+last_pinged = {event: None for event in event_slots}
 
 
 def event_started(embed):
-    """
-    Detect if event has begun.
-
-    Many trackers switch to phrases like:
-    NOW
-    ACTIVE
-    TERRORIZED
-    SPAWNED
-    ago
-    """
-
     text = str(embed.to_dict()).lower()
 
     trigger_words = [
@@ -80,19 +69,57 @@ def get_role(title):
     }.get(title)
 
 
+def detect_event_type(message, embed):
+    """
+    D4 detection unchanged.
+    D2 detection uses:
+      - "Diablo Clone Tracker"
+      - "@TZ"
+    """
+
+    title = embed.title.lower() if embed.title else ""
+    description = embed.description.lower() if embed.description else ""
+    full_text = str(embed.to_dict()).lower()
+
+    # ------------------------
+    # Diablo II Detection
+    # ------------------------
+
+    # Diablo Clone Tracker
+    if "diablo clone tracker" in title or "diablo clone tracker" in full_text:
+        return "Diablo Clone Tracker"
+
+    # Terror Zones (prefixed with @TZ)
+    if "@tz" in message.content.lower() or "@tz" in full_text:
+        return "Terror Zone Tracker"
+
+    # ------------------------
+    # Diablo IV Detection
+    # ------------------------
+
+    if "helltide" in full_text:
+        return "Helltide"
+
+    if "legion" in full_text:
+        return "Legion Event"
+
+    if "world boss" in full_text:
+        return "World Boss"
+
+    return None
+
+
 @bot.event
 async def on_ready():
-
     print(f"Logged in as {bot.user}")
 
     if not rotate_status.is_running():
         rotate_status.start()
 
-    channel = bot.get_channel(CHANNEL_ID)
+    tracker_channel = bot.get_channel(TRACKER_CHANNEL_ID)
 
     # Locate existing slot messages
-    async for msg in channel.history(limit=100):
-
+    async for msg in tracker_channel.history(limit=100):
         if msg.author != bot.user:
             continue
 
@@ -106,69 +133,67 @@ async def on_ready():
 
     # Create missing slots
     for event in event_slots:
-
         if event_slots[event] is None:
-
             embed = discord.Embed(
                 title=event,
                 description="Waiting for event data...",
                 color=discord.Color.dark_gray()
             )
 
-            msg = await channel.send(embed=embed)
+            msg = await tracker_channel.send(embed=embed)
             event_slots[event] = msg
 
 
 @bot.event
 async def on_message(message):
 
-    # Allow webhook OR crossposted OR bot messages
-    if not (message.webhook_id or message.author.bot):
+    # ONLY read from integration channel
+    if message.channel.id != INTEGRATION_CHANNEL_ID:
         return
 
-
-    if message.channel.id != CHANNEL_ID:
+    # Allow followed announcement posts (webhooks / bots)
+    if not (message.webhook_id or message.author.bot):
         return
 
     if not message.embeds:
         return
 
     embed = message.embeds[0]
-    title = embed.title if embed.title else ""
 
-    embed_text = str(embed.to_dict()).lower()
+    event_type = detect_event_type(message, embed)
 
-    # Detect Terror Zone
-    if "terrorized" in embed_text:
-        title = "Terror Zone"
-
-    if title not in event_slots:
+    if not event_type:
         return
 
+    tracker_channel = bot.get_channel(TRACKER_CHANNEL_ID)
+    slot_message = event_slots.get(event_type)
 
-    slot_message = event_slots[title]
+    if not slot_message:
+        return
 
-    # EDIT SLOT
+    # Update slot embed
     await slot_message.edit(embed=embed)
 
-    # PING WHEN EVENT STARTS
+    # Handle pings (30 min cooldown per event)
     if event_started(embed):
-
         now = datetime.utcnow()
 
-        if last_pinged[title] is None or (now - last_pinged[title]).seconds > 1800:
+        if last_pinged[event_type] is None or (now - last_pinged[event_type]).seconds > 1800:
 
-            role = get_role(title)
+            role = get_role(event_type)
 
             if role:
-                await message.channel.send(
-                    f"<@&{role}> **{title} is LIVE!**"
+                await tracker_channel.send(
+                    f"<@&{role}> **{event_type} is LIVE!**"
                 )
 
-            last_pinged[title] = now
+            last_pinged[event_type] = now
 
-    # DELETE SOURCE MESSAGE (keeps channel clean)
-    await message.delete()
+    # Clean up integration channel to prevent clutter
+    try:
+        await message.delete()
+    except:
+        pass
 
 
 bot.run(TOKEN)
