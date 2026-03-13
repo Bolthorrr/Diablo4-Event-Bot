@@ -6,25 +6,6 @@ from flask import Flask
 from threading import Thread
 
 # ---------------------------
-# RENDER KEEP-ALIVE SERVER
-# ---------------------------
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running."
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-def keep_alive():
-    server = Thread(target=run_web)
-    server.start()
-
-
-# ---------------------------
 # DISCORD BOT SETUP
 # ---------------------------
 
@@ -33,35 +14,28 @@ TOKEN = os.getenv("TOKEN")
 INTEGRATION_CHANNEL_ID = int(os.getenv("INTEGRATION_CHANNEL_ID"))
 TRACKER_CHANNEL_ID = int(os.getenv("TRACKER_CHANNEL_ID"))
 
-LEGION_ROLE = os.getenv("LEGION_ROLE")
-HELLTIDE_ROLE = os.getenv("HELLTIDE_ROLE")
-BOSS_ROLE = os.getenv("BOSS_ROLE")
-TERROR_ROLE = os.getenv("TERROR_ZONE")
-CLONE_ROLE = os.getenv("DIABLO_CLONE")
-
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ---------------------------
-# BOT STATUS ROTATION
+# STATUS ROTATION
 # ---------------------------
 
 statuses = [
     discord.Activity(type=discord.ActivityType.watching, name="Helltides"),
     discord.Activity(type=discord.ActivityType.watching, name="World Bosses"),
     discord.Activity(type=discord.ActivityType.watching, name="Terror Zones"),
-    discord.Activity(type=discord.ActivityType.playing, name="Diablo Events"),
+    discord.Activity(type=discord.ActivityType.playing, name="Diablo Events")
 ]
 
 @tasks.loop(minutes=5)
 async def rotate_status():
     await bot.change_presence(activity=random.choice(statuses))
 
-
 # ---------------------------
-# EVENT SLOT SYSTEM
+# EVENT TRACKING
 # ---------------------------
 
 event_slots = {
@@ -72,10 +46,9 @@ event_slots = {
     "Diablo Clone Tracker": None
 }
 
+def identify_event(title):
 
-def identify_event(embed_title):
-
-    title = embed_title.lower()
+    title = title.lower()
 
     if "legion" in title:
         return "Legion Event"
@@ -94,10 +67,6 @@ def identify_event(embed_title):
 
     return None
 
-
-# ---------------------------
-# MESSAGE LISTENER
-# ---------------------------
 
 @bot.event
 async def on_message(message):
@@ -120,7 +89,6 @@ async def on_message(message):
 
     tracker_channel = bot.get_channel(TRACKER_CHANNEL_ID)
 
-    # Delete old message if it exists
     if event_slots[event_type]:
         try:
             old_msg = await tracker_channel.fetch_message(event_slots[event_type])
@@ -128,25 +96,29 @@ async def on_message(message):
         except:
             pass
 
-    # Send new message
     new_msg = await tracker_channel.send(embed=embed)
-
     event_slots[event_type] = new_msg.id
 
 
-# ---------------------------
-# BOT READY
-# ---------------------------
-
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
+    print(f"Bot connected as {bot.user}")
     rotate_status.start()
 
-
 # ---------------------------
-# START SERVICES
+# FLASK SERVER (Render)
 # ---------------------------
 
-keep_alive()
-bot.run(TOKEN)
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is alive"
+
+def run_bot():
+    bot.run(TOKEN)
+
+Thread(target=run_bot).start()
+
+port = int(os.environ.get("PORT", 10000))
+app.run(host="0.0.0.0", port=port)
