@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands, tasks
 import os
-from datetime import datetime
 import random
 from flask import Flask
 from threading import Thread
@@ -12,7 +11,7 @@ from threading import Thread
 
 app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
     return "Bot is running."
 
@@ -23,6 +22,7 @@ def run_web():
 def keep_alive():
     server = Thread(target=run_web)
     server.start()
+
 
 # ---------------------------
 # DISCORD BOT SETUP
@@ -36,20 +36,23 @@ TRACKER_CHANNEL_ID = int(os.getenv("TRACKER_CHANNEL_ID"))
 LEGION_ROLE = os.getenv("LEGION_ROLE")
 HELLTIDE_ROLE = os.getenv("HELLTIDE_ROLE")
 BOSS_ROLE = os.getenv("BOSS_ROLE")
-TERROR_ROLE = os.getenv("TERROR_ROLE")
-CLONE_ROLE = os.getenv("CLONE_ROLE")
+TERROR_ROLE = os.getenv("TERROR_ZONE")
+CLONE_ROLE = os.getenv("DIABLO_CLONE")
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ---------------------------
+# BOT STATUS ROTATION
+# ---------------------------
+
 statuses = [
     discord.Activity(type=discord.ActivityType.watching, name="Helltides"),
     discord.Activity(type=discord.ActivityType.watching, name="World Bosses"),
     discord.Activity(type=discord.ActivityType.watching, name="Terror Zones"),
     discord.Activity(type=discord.ActivityType.playing, name="Diablo Events"),
-    discord.Activity(type=discord.ActivityType.competing, name="Sanctuary")
 ]
 
 @tasks.loop(minutes=5)
@@ -69,18 +72,81 @@ event_slots = {
     "Diablo Clone Tracker": None
 }
 
-last_pinged = {event: None for event in event_slots}
+
+def identify_event(embed_title):
+
+    title = embed_title.lower()
+
+    if "legion" in title:
+        return "Legion Event"
+
+    if "helltide" in title:
+        return "Helltide"
+
+    if "boss" in title:
+        return "World Boss"
+
+    if "@tz" in title or "terror zone" in title:
+        return "Terror Zone Tracker"
+
+    if "diablo clone tracker" in title:
+        return "Diablo Clone Tracker"
+
+    return None
 
 
-def event_started(embed):
-    text = str(embed.to_dict()).lower()
+# ---------------------------
+# MESSAGE LISTENER
+# ---------------------------
 
-    trigger_words = [
-        "now",
-        "active",
-        "terrorized",
-        "spawned",
-        "ago"
-    ]
+@bot.event
+async def on_message(message):
 
-    re
+    if message.channel.id != INTEGRATION_CHANNEL_ID:
+        return
+
+    if not message.embeds:
+        return
+
+    embed = message.embeds[0]
+
+    if not embed.title:
+        return
+
+    event_type = identify_event(embed.title)
+
+    if not event_type:
+        return
+
+    tracker_channel = bot.get_channel(TRACKER_CHANNEL_ID)
+
+    # Delete old message if it exists
+    if event_slots[event_type]:
+        try:
+            old_msg = await tracker_channel.fetch_message(event_slots[event_type])
+            await old_msg.delete()
+        except:
+            pass
+
+    # Send new message
+    new_msg = await tracker_channel.send(embed=embed)
+
+    event_slots[event_type] = new_msg.id
+
+
+# ---------------------------
+# BOT READY
+# ---------------------------
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    rotate_status.start()
+
+
+# ---------------------------
+# START SERVICES
+# ---------------------------
+
+keep_alive()
+bot.run(TOKEN)
